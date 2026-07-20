@@ -24,35 +24,51 @@ jobs:
           ref: feature/serial-parallel-schedules
           fetch-depth: 0
 
-      - name: Patch migration script for current constructor order
+      - name: Normalize migration matcher
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path("tools/apply_serial_parallel.py")
           text = path.read_text(encoding="utf-8")
 
-          old = '''    "            zone_durations=call.data.get(\"zone_durations\", {}),\\n"
-              "            enabled=call.data.get(\"enabled\", True),\\n",
-              "            zone_durations=call.data.get(\"zone_durations\", {}),\\n"
-              "            execution_mode=call.data.get(\"execution_mode\", \"serial\"),\\n"
-              "            zone_delay_seconds=call.data.get(\"zone_delay_seconds\", 5),\\n"
-              "            enabled=call.data.get(\"enabled\", True),\\n",'''
+          pattern = re.compile(
+              r'text = replace_once\(\n'
+              r'\s*text,\n'
+              r'\s*"            zone_durations=call\.data\.get\(\\"zone_durations\\", \{\}\),\\n"\n'
+              r'\s*"            enabled=call\.data\.get\(\\"enabled\\", True\),\\n",\n'
+              r'\s*"            zone_durations=call\.data\.get\(\\"zone_durations\\", \{\}\),\\n"\n'
+              r'\s*"            execution_mode=call\.data\.get\(\\"execution_mode\\", \\"serial\\"\),\\n"\n'
+              r'\s*"            zone_delay_seconds=call\.data\.get\(\\"zone_delay_seconds\\", 5\),\\n"\n'
+              r'\s*"            enabled=call\.data\.get\(\\"enabled\\", True\),\\n",\n'
+              r'\s*"create schedule fields",\n'
+              r'\)',
+              re.S,
+          )
 
-          new = '''    "            enabled=call.data.get(\"enabled\", True),\\n"
-              "            zone_durations=call.data.get(\"zone_durations\", {}),\\n",
-              "            enabled=call.data.get(\"enabled\", True),\\n"
-              "            zone_durations=call.data.get(\"zone_durations\", {}),\\n"
-              "            execution_mode=call.data.get(\"execution_mode\", \"serial\"),\\n"
-              "            zone_delay_seconds=call.data.get(\"zone_delay_seconds\", 5),\\n",'''
+          replacement = '''text = replace_once(
+              text,
+              "            enabled=call.data.get(\\"enabled\\", True),\\n"
+              "            zone_durations=call.data.get(\\"zone_durations\\", {}),\\n",
+              "            enabled=call.data.get(\\"enabled\\", True),\\n"
+              "            zone_durations=call.data.get(\\"zone_durations\\", {}),\\n"
+              "            execution_mode=call.data.get(\\"execution_mode\\", \\"serial\\"),\\n"
+              "            zone_delay_seconds=call.data.get(\\"zone_delay_seconds\\", 5),\\n",
+              "create schedule fields",
+          )'''
 
-          if old not in text:
-              raise RuntimeError("Expected create-schedule matcher was not found")
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise RuntimeError(f"Could not normalize create-schedule matcher: {count} matches")
 
-          path.write_text(text.replace(old, new, 1), encoding="utf-8")
-          print("Migration matcher updated")
+          path.write_text(text, encoding="utf-8")
+          print("Migration matcher normalized")
           PY
+
+      - name: Validate migration script syntax
+        run: python -m py_compile tools/apply_serial_parallel.py
 
       - name: Apply source changes
         run: python tools/apply_serial_parallel.py

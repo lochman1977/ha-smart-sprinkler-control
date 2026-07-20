@@ -1,0 +1,52 @@
+name: Apply serial and parallel schedules
+
+on:
+  push:
+    branches:
+      - feature/serial-parallel-schedules
+    paths:
+      - tools/apply_serial_parallel.py
+      - .github/workflows/apply-serial-parallel.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/serial-parallel-schedules
+          fetch-depth: 0
+
+      - name: Apply source changes
+        run: python tools/apply_serial_parallel.py
+
+      - name: Validate Python syntax
+        run: python -m compileall custom_components/smart_sprinkler_control
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Verify generated changes
+        run: |
+          git diff --check
+          git status --short
+
+      - name: Commit generated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add custom_components frontend/src frontend/dist
+          if git diff --cached --quiet; then
+            echo "No implementation changes to commit"
+            exit 0
+          fi
+          git commit -m "Add serial and parallel schedule execution"
+          git push origin HEAD:feature/serial-parallel-schedules

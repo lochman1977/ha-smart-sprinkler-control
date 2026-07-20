@@ -23,6 +23,30 @@ jobs:
           ref: feature/serial-parallel-schedules
           fetch-depth: 0
 
+      - name: Fix migration matcher
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tools/apply_serial_parallel.py')
+          text = path.read_text()
+          old = '''    "            zone_durations=call.data.get(\"zone_durations\", {}),\\n"
+              "            enabled=call.data.get(\"enabled\", True),\\n",
+              "            zone_durations=call.data.get(\"zone_durations\", {}),\\n"
+              "            execution_mode=call.data.get(\"execution_mode\", \"serial\"),\\n"
+              "            zone_delay_seconds=call.data.get(\"zone_delay_seconds\", 5),\\n"
+              "            enabled=call.data.get(\"enabled\", True),\\n",'''
+          new = '''    "            enabled=call.data.get(\"enabled\", True),\\n"
+              "            zone_durations=call.data.get(\"zone_durations\", {}),\\n",
+              "            enabled=call.data.get(\"enabled\", True),\\n"
+              "            zone_durations=call.data.get(\"zone_durations\", {}),\\n"
+              "            execution_mode=call.data.get(\"execution_mode\", \"serial\"),\\n"
+              "            zone_delay_seconds=call.data.get(\"zone_delay_seconds\", 5),\\n",'''
+          if old not in text:
+              raise SystemExit('Migration matcher patch target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
       - name: Apply source changes
         run: python tools/apply_serial_parallel.py
 

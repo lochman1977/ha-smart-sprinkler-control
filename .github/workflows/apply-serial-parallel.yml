@@ -1,6 +1,7 @@
 name: Apply serial and parallel schedules
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feature/serial-parallel-schedules

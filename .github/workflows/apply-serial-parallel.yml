@@ -24,29 +24,30 @@ jobs:
           ref: feature/serial-parallel-schedules
           fetch-depth: 0
 
-      - name: Normalize migration matcher
-        shell: bash
+      - name: Normalize create schedule matcher
         run: |
           python - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path("tools/apply_serial_parallel.py")
-          text = path.read_text(encoding="utf-8")
+          lines = path.read_text(encoding="utf-8").splitlines()
 
-          pattern = re.compile(
-              r'text = replace_once\(\n'
-              r'\s*text,\n'
-              r'\s*"            zone_durations=call\.data\.get\(\\"zone_durations\\", \{\}\),\\n"\n'
-              r'\s*"            enabled=call\.data\.get\(\\"enabled\\", True\),\\n",\n'
-              r'\s*"            zone_durations=call\.data\.get\(\\"zone_durations\\", \{\}\),\\n"\n'
-              r'\s*"            execution_mode=call\.data\.get\(\\"execution_mode\\", \\"serial\\"\),\\n"\n'
-              r'\s*"            zone_delay_seconds=call\.data\.get\(\\"zone_delay_seconds\\", 5\),\\n"\n'
-              r'\s*"            enabled=call\.data\.get\(\\"enabled\\", True\),\\n",\n'
-              r'\s*"create schedule fields",\n'
-              r'\)',
-              re.S,
+          marker = next(
+              i for i, line in enumerate(lines)
+              if '"create schedule fields"' in line
           )
+
+          start = marker
+          while start >= 0 and lines[start].strip() != "text = replace_once(":
+              start -= 1
+          if start < 0:
+              raise RuntimeError("Start of create schedule matcher not found")
+
+          end = marker
+          while end < len(lines) and lines[end].strip() != ")":
+              end += 1
+          if end >= len(lines):
+              raise RuntimeError("End of create schedule matcher not found")
 
           replacement = '''text = replace_once(
               text,
@@ -57,14 +58,11 @@ jobs:
               "            execution_mode=call.data.get(\\"execution_mode\\", \\"serial\\"),\\n"
               "            zone_delay_seconds=call.data.get(\\"zone_delay_seconds\\", 5),\\n",
               "create schedule fields",
-          )'''
+          )'''.splitlines()
 
-          text, count = pattern.subn(replacement, text, count=1)
-          if count != 1:
-              raise RuntimeError(f"Could not normalize create-schedule matcher: {count} matches")
-
-          path.write_text(text, encoding="utf-8")
-          print("Migration matcher normalized")
+          lines[start:end + 1] = replacement
+          path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(f"Replaced matcher block at lines {start + 1}-{end + 1}")
           PY
 
       - name: Validate migration script syntax
